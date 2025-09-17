@@ -1,0 +1,49 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Custom for Python
+*.py text eol=lf
+*.pyw text eol=lf
+*.pyi text eol=lf
+*.pyx text eol=lf
+*.pyd text binary
+
+# Data files
+*.csv text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Script files
+*.sh text eol=lf
+*.bash text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Docker files
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose*.yml text eol=lf
+\# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Image files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg text eol=lf
+
+# Other binary files
+*.zip binary
+*.tar binary
+*.gz binary
+*.rar binary
+*.7z binary
+
+# Exclude files from being normalized
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.env text eol=crlf

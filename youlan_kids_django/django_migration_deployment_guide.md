@@ -150,7 +150,7 @@ cd /opt/projects
 # 3. URL格式通常为：https://<平台地址>/<用户名>/<仓库名>.git 或 git@<平台地址>:<用户名>/<仓库名>.git
 # 4. 如果没有仓库，请联系项目管理员获取
 # 5. 如果是私有仓库，确保您的服务器已经配置了SSH密钥或其他认证方式
-git clone <仓库URL>
+git clone https://github.com/MAGI0804/youlan_django.git
 cd youlan_kids_django
 
 # 如果有.gitignore文件，请检查是否包含了不必要的文件

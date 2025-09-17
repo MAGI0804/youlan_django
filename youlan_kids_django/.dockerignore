@@ -1,41 +1,65 @@
-# 虚拟环境
-venv
-.env
-
-# Git
-.git
-.gitignore
-
-# IDE 配置
-.idea/
-.vscode/
-*.iml
-
-# 日志文件
-*.log
-
-# 数据库文件
-*.sqlite3
-
-# 缓存
+# Python相关文件
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 
-# 静态文件目录（通常在Docker构建后收集）
-static/
-
-# 媒体文件（通常通过卷挂载）
-media/
+# 环境文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # 操作系统文件
 .DS_Store
 Thumbs.db
 
-# 测试文件
-coverage/
-.pytest_cache/
+# 日志文件
+*.log
 
-# 临时文件
-tmp/
-temp/
+# 编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 测试相关
+.coverage
+coverage.xml
+htmlcov/
+
+# 构建产物
+/build/
+/dist/
+
+# 虚拟环境
+venv/
+env/
+.env/
+
+# 数据库文件
+*.sqlite3
+*.sqlite
+
+# 媒体文件
+media/
+staticfiles/
+
+# 其他临时文件
+*.tmp
+*.temp
+.cache/
+
+# Docker相关
+.dockerignore
+docker-compose.yml
+Dockerfile
+
+# Windows批处理文件
+*.bat
+
+# 文档文件
+*.md
+*.txt
