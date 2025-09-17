@@ -1,0 +1,24 @@
+version: '3'
+
+services:
+  web:
+    build:
+      context: .
+      # 使用国内Docker镜像源
+      args:
+        BASE_IMAGE: registry.cn-hangzhou.aliyuncs.com/library/python:3.10-slim-buster
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=youlan_kids_django.settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONUTF8=1
+      - PYTHONIOENCODING=utf-8
+    # 为远程开发配置
+    tty: true
+    stdin_open: true
+
+# 注意：使用此配置文件时，请确保您的Dockerfile能够接受BASE_IMAGE参数

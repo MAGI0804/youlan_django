@@ -1,0 +1,41 @@
+# 虚拟环境
+venv
+.env
+
+# Git
+.git
+.gitignore
+
+# IDE 配置
+.idea/
+.vscode/
+*.iml
+
+# 日志文件
+*.log
+
+# 数据库文件
+*.sqlite3
+
+# 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 静态文件目录（通常在Docker构建后收集）
+static/
+
+# 媒体文件（通常通过卷挂载）
+media/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 测试文件
+coverage/
+.pytest_cache/
+
+# 临时文件
+tmp/
+temp/
