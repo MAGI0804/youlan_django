@@ -1,0 +1,23 @@
+# 忽略除youlan_kids_django以外的所有目录
+web_class/
+wx_ui/
+wx_ui_kids/
+
+# IDE相关
+.idea/
+.vscode/
+*.iml
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 只保留youlan_kids_django目录
+!youlan_kids_django/
+
+# 在youlan_kids_django目录内应用的忽略规则
+/youlan_kids_django/.idea/
+/youlan_kids_django/__pycache__/
+/youlan_kids_django/media/
+/youlan_kids_django/debug.log
+/youlan_kids_django/run_tests.py
