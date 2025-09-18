@@ -14,8 +14,6 @@ import os
 from pathlib import Path
 from django.utils import timezone
 from datetime import timedelta
-
-# 读取.env文件
 from dotenv import load_dotenv
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

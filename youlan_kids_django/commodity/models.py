@@ -149,6 +149,25 @@ class CommoditySituation(models.Model):
         verbose_name_plural = '商品状态'
 
 
+class StyleCodeData(models.Model):
+    style_code = models.CharField(max_length=50, primary_key=True, verbose_name='款式编码')
+    name = models.CharField(max_length=255, verbose_name='商品名称')
+    image = models.ImageField(upload_to=commodity_image_path, verbose_name='商品主图')
+    category = models.CharField(max_length=100, verbose_name='商品类目')
+    category_detail = models.CharField(max_length=100, blank=True, verbose_name='商品分类')
+    price = models.FloatField(verbose_name='商品价格')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'StyleCode_Data'
+        verbose_name = '款式数据'
+        verbose_name_plural = '款式数据'
+
+    def __str__(self):
+        return f'{self.style_code} - {self.name}'
+
+
 class StyleCodeSituation(models.Model):
     STATUS_CHOICES = [
         ('online', '上线'),
@@ -170,7 +189,7 @@ class StyleCodeSituation(models.Model):
     def __str__(self):
         return f'{self.style_code} - {self.get_status_display()}'
 
-# 信号处理函数：当Commodity模型添加记录时，自动创建对应的CommodityImage和CommoditySituation记录
+# 信号处理函数：当Commodity模型添加记录时，自动创建对应的CommodityImage、CommoditySituation和StyleCodeData记录
 @receiver(post_save, sender=Commodity)
 def create_related_records(sender, instance, created, **kwargs):
     if created:
@@ -185,10 +204,23 @@ def create_related_records(sender, instance, created, **kwargs):
             }
         )
         
-        # 处理StyleCodeSituation记录：自动提取商品模型中的style_code并去重
+        # 处理StyleCodeData记录：自动为款式编码创建或更新对应的款式数据
         if instance.style_code:
+            # 获取或创建StyleCodeData记录
+            style_data, data_created = StyleCodeData.objects.get_or_create(
+                style_code=instance.style_code,
+                defaults={
+                    'name': instance.name,
+                    'image': instance.image,
+                    'category': instance.category,
+                    'category_detail': instance.category_detail,
+                    'price': instance.price
+                }
+            )
+            
+            # 处理StyleCodeSituation记录：自动提取商品模型中的style_code并去重
             # 获取或创建StyleCodeSituation记录
-            style_situation, created = StyleCodeSituation.objects.get_or_create(
+            style_situation, situation_created = StyleCodeSituation.objects.get_or_create(
                 style_code=instance.style_code,
                 defaults={
                     'status': 'online',  # 默认设置为上线状态
@@ -197,7 +229,7 @@ def create_related_records(sender, instance, created, **kwargs):
             )
             
             # 如果记录已存在，更新同步数据量
-            if not created:
+            if not situation_created:
                 # 计算该款式编码的商品数量
                 style_code_count = Commodity.objects.filter(style_code=instance.style_code).count()
                 # 更新同步数据量

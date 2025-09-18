@@ -2,7 +2,7 @@ from dataclasses import field
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from .models import Commodity, CommoditySituation, CommodityImage, StyleCodeSituation
+from .models import Commodity, CommoditySituation, CommodityImage, StyleCodeSituation, StyleCodeData
 from django.views.decorators.http import require_http_methods
 from django.db import IntegrityError, transaction, models
 import logging
@@ -130,7 +130,7 @@ def search_products_by_name(request):  # 根据名称搜索商品
         return JsonResponse({'code': 500, 'message': f'搜索失败: {str(e)}'})
 
 @csrf_exempt
-@require_http_methods("POST") 
+@require_http_methods("POST")
 def get_all_categories(request):   #获取所有商品类别
 
     try:
@@ -149,6 +149,86 @@ def get_all_categories(request):   #获取所有商品类别
         return JsonResponse({'error': '无效的JSON格式'}, status=400)
     except Exception as e:
         logger.error(f'查询类别失败: {str(e)}', exc_info=True)
+        return JsonResponse({'code': 500, 'message': f'查询失败: {str(e)}'})
+
+
+@csrf_exempt
+@require_http_methods("POST")
+def search_style_codes(request):  # 搜索款式编码名称
+    try:
+        # 解析请求体
+        data = json.loads(request.body)
+        # 验证shop参数
+        if data.get('shopname') != 'youlan_kids':
+            return JsonResponse({'code': 400, 'message': '无效的店铺名称'}, status=400)
+        
+        # 搜索关键词
+        search_keyword = data.get('search_keyword', '').strip()
+        
+        if not search_keyword:
+            return JsonResponse({'code': 400, 'message': '搜索关键词不能为空'}, status=400)
+        
+        # 分页参数
+        page = data.get('page', 1)
+        page_size = data.get('page_size', 10)
+        
+        # 验证分页参数
+        try:
+            page = int(page)
+            page_size = int(page_size)
+            if page < 1 or page_size < 1:
+                raise ValueError
+        except ValueError:
+            return JsonResponse({'code': 400, 'message': '分页参数必须为正整数'}, status=400)
+        
+        # 根据关键词筛选StyleCodeData模型中的name字段
+        style_code_data_list = StyleCodeData.objects.filter(name__icontains=search_keyword).order_by('style_code')
+        
+        # 计算总条数
+        total_count = style_code_data_list.count()
+        
+        # 计算起始和结束索引
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_count)
+        
+        # 获取当前页数据
+        paginated_data = style_code_data_list[start_index:end_index]
+        
+        # 构建返回结果
+        result = []
+        for style_code_data in paginated_data:
+            style_info = {
+                'style_code': style_code_data.style_code,
+                'name': style_code_data.name,
+                'category': style_code_data.category,
+                'category_detail': style_code_data.category_detail,
+                'price': style_code_data.price,
+                'image': request.build_absolute_uri(style_code_data.image.url) if style_code_data.image else None,
+                'created_at': (style_code_data.created_at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S"),
+                'updated_at': (style_code_data.updated_at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+            }
+            result.append(style_info)
+        
+        # 计算总页数
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        # 记录审计日志
+        audit_user = request.user.username if request.user.is_authenticated else 'anonymous'
+        audit_logger.info(f'SEARCH_STYLE_CODES_BY_NAME|user:{audit_user}|search_keyword:{search_keyword}|page:{page}|page_size:{page_size}')
+        
+        return JsonResponse({
+            'code': 200,
+            'message': '查询成功',
+            'data': result,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'current_page': page,
+            'page_size': page_size
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': '无效的JSON格式'}, status=400)
+    except Exception as e:
+        logger.error(f'搜索款式编码名称失败: {str(e)}', exc_info=True)
         return JsonResponse({'code': 500, 'message': f'查询失败: {str(e)}'})
 
 @csrf_exempt
