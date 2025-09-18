@@ -2,6 +2,10 @@ from django.http import HttpResponse, JsonResponse
 from django.db import DatabaseError
 from django.conf import settings
 from access_token.models import AccessToken
+from django.core.cache import cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PathValidationMiddleware:
     def __init__(self, get_response):
@@ -162,8 +166,18 @@ class AccessTokenMiddleware:
             }, status=401)
 
         try:
-            # 从数据库查询有效的token
-            token_obj = AccessToken.objects.get(access_token=access_token)
+            # 尝试从缓存获取token信息
+            cache_key = f'token_{access_token}'
+            cached_token = cache.get(cache_key)
+            
+            if cached_token:
+                token_ip = cached_token
+            else:
+                # 从数据库查询有效的token
+                token_obj = AccessToken.objects.get(access_token=access_token)
+                token_ip = token_obj.ip_address
+                # 将token信息存入缓存，过期时间设为10分钟
+                cache.set(cache_key, token_ip, 600)
             
             # 获取请求IP地址（支持代理）
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
@@ -173,8 +187,10 @@ class AccessTokenMiddleware:
                 ip_address = request.META.get('REMOTE_ADDR', '')
             
             # 验证IP是否与token绑定
-            if token_obj.ip_address != ip_address:
-                logger.warning(f'IP验证失败: token绑定IP={token_obj.ip_address}, 请求IP={ip_address}')
+            if token_ip != ip_address:
+                logger.warning(f'IP验证失败: token绑定IP={token_ip}, 请求IP={ip_address}')
+                # 清除缓存中的无效token
+                cache.delete(cache_key)
                 return JsonResponse({
                     'code': 401,
                     'message': 'IP address does not match token'

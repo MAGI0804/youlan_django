@@ -16,10 +16,11 @@ WORKDIR /app
 
 # 安装项目依赖
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    pip install gunicorn
 
 # 暴露端口
 EXPOSE 8000
 
-# 运行Django服务器
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# 运行Gunicorn WSGI服务器，使用4个工作进程
+CMD ["gunicorn", "youlan_kids_django.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "300"]

@@ -29,7 +29,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-m89*e)$=h*0a#6!$=e+r@
 # 安全警告：生产环境必须关闭DEBUG
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
 
 # 添加日志配置
 LOGGING = {
@@ -100,9 +105,8 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'youlan_kids_django.middleware.AccessTokenMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'youlan_kids_django.middleware.AccessTokenMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -145,7 +149,8 @@ DATABASES = {
             'charset': 'utf8mb4',
             'connect_timeout': 10,
             # 'init_command': "SET time_zone = '+00:00';"
-        }
+        },
+        'CONN_MAX_AGE': 600,  # 数据库连接最大保持时间为10分钟
     }
 }
 
