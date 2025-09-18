@@ -2,8 +2,8 @@
 
 # 服务器部署脚本 - 用于清理旧文件并从GitHub拉取最新代码
 
-# 设置变量（用户需要根据实际情况修改）
-GITHUB_REPO="https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git"
+# 设置变量（已配置为正确的URL）
+GITHUB_REPO="https://github.com/MAGI0804/youlan_django.git"
 PROJECT_NAME="youlan_kids_customization"
 DJANGO_APP_DIR="youlan_kids_django"
 

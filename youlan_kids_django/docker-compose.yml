@@ -1,22 +1,26 @@
-version: '3'
-
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: python manage.py runserver 0.0.0.0:8000
+    build: .
     volumes:
       - .:/app
     ports:
-      - "8000:8000"
+      - "8080:8000"
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONIOENCODING=utf-8
       - DEBUG=True
-    network_mode: bridge
+      - DB_ENGINE=django.db.backends.mysql
+      - DB_HOST=rm-uf623nc5tc2icc2u9uo.mysql.rds.aliyuncs.com
+      - DB_PORT=3306
+      - DB_NAME=wechat_member
+      - DB_USER=youlansy
+      - DB_PASSWORD=Allblu2022#
+    networks:
+      - web_network
 
-# 网络配置
 networks:
-  default:
+  web_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16

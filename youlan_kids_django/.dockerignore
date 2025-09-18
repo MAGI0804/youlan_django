@@ -62,4 +62,5 @@ Dockerfile
 
 # 文档文件
 *.md
-*.txt
+# 保留requirements.txt文件
+!requirements.txt

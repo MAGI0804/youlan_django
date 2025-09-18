@@ -18,6 +18,6 @@ Thumbs.db
 # 在youlan_kids_django目录内应用的忽略规则
 /youlan_kids_django/.idea/
 /youlan_kids_django/__pycache__/
-/youlan_kids_django/media/
+# 不要忽略media目录，确保媒体文件可以同步到GitHub
 /youlan_kids_django/debug.log
 /youlan_kids_django/run_tests.py

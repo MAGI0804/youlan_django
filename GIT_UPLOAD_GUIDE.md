@@ -64,10 +64,10 @@ git commit -m "清理项目结构 - 标准化Docker配置和部署流程"
 执行以下命令添加GitHub远程仓库：
 
 ```bash
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+git remote add origin https://github.com/MAGI0804/youlan_django.git
 ```
 
-请将`YOUR_USERNAME`替换为您的GitHub用户名，`YOUR_REPOSITORY`替换为您创建的仓库名称。
+（已配置为正确的URL，无需修改）
 
 ### 情况2：远程仓库已存在（解决`remote origin already exists.`错误）
 
@@ -80,13 +80,13 @@ git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
 
 2. **更新现有远程仓库URL**（如果需要修改URL）：
    ```bash
-   git remote set-url origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+   git remote set-url origin https://github.com/MAGI0804/youlan_django.git
    ```
 
 3. **或者删除现有远程仓库后重新添加**（谨慎使用）：
    ```bash
    git remote remove origin
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+   git remote add origin https://github.com/MAGI0804/youlan_django.git
    ```
 
 ## 步骤5：验证远程仓库连接
@@ -104,7 +104,7 @@ git remote -v
 执行以下命令将本地代码推送到GitHub仓库：
 
 ```bash
-git push -u origin main
+git push  origin master
 ```
 
 如果您的默认分支名称不是`main`，请使用正确的分支名称（例如`master`）。
@@ -171,7 +171,7 @@ git pull origin main --rebase
 ```bash
 # 克隆GitHub仓库
 cd /opt/projects
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git youlan_kids_customization
+git clone https://github.com/MAGI0804/youlan_django.git youlan_kids_customization
 
 # 进入项目目录
 cd youlan_kids_customization/youlan_kids_django
@@ -198,21 +198,40 @@ git commit -m "清理项目结构 - 标准化Docker配置和部署流程"
 
 # 配置远程仓库（根据情况选择）
 # 情况1：首次添加远程仓库
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+git remote add origin https://github.com/MAGI0804/youlan_django.git
 # 情况2：更新现有远程仓库URL
-git remote set-url origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+git remote set-url origin https://github.com/MAGI0804/youlan_django.git
 
 # 推送代码
 git push -u origin main
 
 # 服务器操作（假设使用/opt/projects目录）
 cd /opt/projects
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git youlan_kids_customization
+git clone https://github.com/MAGI0804/youlan_django.git youlan_kids_customization
 sudo chown -R $USER:$USER youlan_kids_customization
 sudo chmod -R 755 youlan_kids_customization
 cd youlan_kids_customization/youlan_kids_django
 # 确保.env文件存在并配置正确
 docker-compose up -d --build
+```
+
+### 7.2 Git URL强制转换问题（解决"Connection was reset"错误）
+
+如果您在使用HTTPS URL推送代码时遇到"Recv failure: Connection was reset"错误，可以尝试以下解决方案：
+
+```bash
+# 1. 检查是否存在URL强制转换配置
+git config --global --get-all url.https://github.com/.insteadof
+
+# 2. 如果存在，删除这个配置
+git config --global --unset-all url.https://github.com/.insteadof
+
+# 3. 切换到SSH协议（需要预先配置SSH密钥）
+git remote remove origin
+git remote add origin git@github.com:MAGI0804/youlan_django.git
+
+# 4. 重新推送代码
+git push -u origin master
 ```
 
 ## 后续维护

@@ -81,7 +81,7 @@ git push origin main
 
 ```bash
 ssh user@server_ip
-git clone <your_repository_url>
+git clone https://github.com/MAGI0804/youlan_django.git
 cd youlan_kids_django
 ```
 

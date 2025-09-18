@@ -39,7 +39,7 @@ git commit -m "初始提交 - 清理后的项目结构"
 ### 4.2 连接到GitHub并推送代码
 
 ```bash
-# 添加GitHub远程仓库（将YOUR_USERNAME和YOUR_REPOSITORY替换为实际值）
+# 添加GitHub远程仓库（已配置为正确的URL）
 git remote add origin https://github.com/MAGI0804/youlan_django.git
 # 推送到GitHub主分支
 git push -u origin main
@@ -52,11 +52,11 @@ git push -u origin main
 在服务器上执行以下命令：
 
 ```bash
-# 克隆GitHub仓库（将YOUR_USERNAME和YOUR_REPOSITORY替换为实际值）
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-sudo chown -R $USER:$USER YOUR_REPOSITORY
-sudo chmod -R 755 YOUR_REPOSITORY
-cd YOUR_REPOSITORY/youlan_kids_django
+# 克隆GitHub仓库
+git clone https://github.com/MAGI0804/youlan_django.git
+sudo chown -R $USER:$USER youlan_django
+sudo chmod -R 755 youlan_django
+cd youlan_django/youlan_kids_django
 ```
 
 ### 5.2 配置环境变量
@@ -138,7 +138,7 @@ sudo systemctl restart docker
 当有新的代码更改时，在服务器上更新项目：
 
 ```bash
-cd YOUR_REPOSITORY/youlan_kids_django
+cd youlan_django/youlan_kids_django
 # 拉取最新代码
 git pull origin main
 # 重新构建和运行
