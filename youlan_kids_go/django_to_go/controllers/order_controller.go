@@ -16,97 +16,237 @@ import (
 
 type OrderController struct{}
 
-// OrderList 获取订单列表
+// OrderList 获取订单列表 - 与Django版本的orders_query函数对应
 func (oc *OrderController) OrderList(c *gin.Context) {
-	// 获取查询参数
-	userIDStr := c.Query("user_id")
-	if userIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少user_id参数"})
+	// 绑定请求参数
+	var queryData struct {
+		Shopname  string `json:"shopname" binding:"required"`
+		UserID    int    `json:"user_id"`
+		Status    string `json:"status"`
+		Page      int    `json:"page" binding:"required,min=1"`
+		PageSize  int    `json:"page_size" binding:"required,min=1,max=50"`
+		BeginTime string `json:"begin_time"`
+		EndTime   string `json:"end_time"`
+	}
+
+	if err := c.ShouldBindJSON(&queryData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误"})
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的user_id"})
+	// 验证shopname
+	if queryData.Shopname != "youlan_kids" {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的店铺名称"})
 		return
 	}
 
-	pageNum, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	status := c.Query("status")
-
-	// 计算偏移量
-	offset := (pageNum - 1) * pageSize
+	// 限制PageSize最大值为50
+	if queryData.PageSize > 50 {
+		queryData.PageSize = 50
+	}
 
 	// 构建查询
 	var orders []models.Order
-	query := db.DB.Model(&models.Order{}).Where("user_id = ?", userID)
+	query := db.DB.Model(&models.Order{}) // 注意这里使用了正确的表名
 
-	// 添加状态筛选
-	if status != "" {
-		query = query.Where("status = ?", status)
+	// 应用user_id过滤
+	if queryData.UserID > 0 {
+		query = query.Where("user_id = ?", queryData.UserID)
 	}
+
+	// 应用状态过滤
+	validStatuses := []string{"pending", "shipped", "delivered", "canceled", "processing"}
+	if queryData.Status != "" {
+		statusValid := false
+		for _, validStatus := range validStatuses {
+			if validStatus == queryData.Status {
+				statusValid = true
+				break
+			}
+		}
+		if !statusValid {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "订单状态无效"})
+			return
+		}
+		query = query.Where("status = ?", queryData.Status)
+	}
+
+	// 应用日期过滤
+	if queryData.BeginTime != "" {
+		beginTime, err := time.Parse("2006-01-02", queryData.BeginTime)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "日期格式必须为YYYY-MM-DD"})
+			return
+		}
+		// 转换为UTC时间（Django默认存储UTC时间）
+		beginTime = beginTime.Add(-8 * time.Hour)
+		query = query.Where("order_time >= ?", beginTime)
+	}
+
+	if queryData.EndTime != "" {
+		endTime, err := time.Parse("2006-01-02", queryData.EndTime)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "日期格式必须为YYYY-MM-DD"})
+			return
+		}
+		// 转换为UTC时间并加一天（包含当天）
+		endTime = endTime.Add(-8*time.Hour + 24*time.Hour)
+		query = query.Where("order_time < ?", endTime)
+	}
+
+	// 计算偏移量
+	offset := (queryData.Page - 1) * queryData.PageSize
 
 	// 执行分页查询
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		log.Printf("获取订单总数失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "服务器内部错误"})
 		return
 	}
 
-	if err := query.Offset(offset).Limit(pageSize).Order("order_id DESC").Find(&orders).Error; err != nil {
+	if err := query.Offset(offset).Limit(queryData.PageSize).Order("order_time DESC").Find(&orders).Error; err != nil {
 		log.Printf("获取订单列表失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "服务器内部错误"})
+		return
+	}
+
+	// 转换订单数据格式
+	result := make([]map[string]interface{}, 0, len(orders))
+	for _, order := range orders {
+		orderMap := convertOrderToMap(order)
+		// 添加物流过程空列表（批量查询时不返回实际物流信息）
+		orderMap["logistics_process"] = []interface{}{}
+		result = append(result, orderMap)
+	}
+
+	// 准备响应数据
+	c.JSON(http.StatusOK, gin.H{
+		"status":   "success",
+		"data":     result,
+		"page":     queryData.Page,
+		"page_size": queryData.PageSize,
+		"total":    total,
+	})
+}
+
+// OrderDetail 获取订单详情 - 与Django版本的query_order_data函数对应
+func (oc *OrderController) OrderDetail(c *gin.Context) {
+	// 绑定请求参数
+	var queryData struct {
+		OrderID string `json:"order_id" binding:"required"`
+		UserID  int    `json:"user_id"`
+	}
+
+	if err := c.ShouldBindJSON(&queryData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误"})
+		return
+	}
+
+	// 构建查询条件
+	query := db.DB.Model(&models.Order{}).Where("order_id = ?", queryData.OrderID)
+
+	// 如果提供了user_id，则添加到查询条件中
+	if queryData.UserID > 0 {
+		query = query.Where("user_id = ?", queryData.UserID)
+	}
+
+	// 查询订单
+	var order models.Order
+	if err := query.First(&order).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订单不存在"})
 		return
 	}
 
 	// 准备响应数据
-	responseData := gin.H{
-		"code":    200,
-		"message": "获取成功",
-		"data": gin.H{
-			"total": total,
-			"items": convertOrdersToMap(orders),
-		},
-	}
+	detailMap := convertOrderToMap(order)
 
-	c.JSON(http.StatusOK, responseData)
+	// 返回订单信息（不含物流更新和物流信息返回）
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "查询订单信息成功",
+		"data":    detailMap
+	})
 }
 
-// OrderDetail 获取订单详情
-func (oc *OrderController) OrderDetail(c *gin.Context) {
-	orderIDStr := c.Param("id")
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的订单ID"})
+// ChangeStatus 修改订单状态 - 与Django版本的change_status函数对应
+func (oc *OrderController) ChangeStatus(c *gin.Context) {
+	// 绑定请求数据
+	var requestData struct {
+		OrderID      string `json:"order_id" binding:"required"`
+		Status       string `json:"status" binding:"required"`
+		ExpressCompany string `json:"express_company"`
+		ExpressNumber  string `json:"express_number"`
+	}
+
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "请求数据无效",
+		})
+		return
+	}
+
+	// 验证状态值
+	validStatus := map[string]bool{
+		"pending":   true,
+		"paid":      true,
+		"shipped":   true,
+		"delivered": true,
+		"cancelled": true,
+	}
+
+	if !validStatus[requestData.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "无效的订单状态",
+		})
 		return
 	}
 
 	// 查询订单
 	var order models.Order
-	if err := db.DB.Where("order_id = ?", orderID).First(&order).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
+	if err := db.DB.Where("order_id = ?", requestData.OrderID).First(&order).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "订单不存在",
+		})
 		return
 	}
 
-	// 查询订单物流信息
-	var logistics models.OrderLogistics
-	if err := db.DB.Where("order_id = ?", orderID).First(&logistics).Error; err != nil {
-		log.Printf("获取物流信息失败: %v", err)
+	// 如果状态是shipped，验证物流信息
+	if requestData.Status == "shipped" {
+		if requestData.ExpressCompany == "" || requestData.ExpressNumber == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "发货状态需要提供物流信息",
+			})
+			return
+		}
+		order.ExpressCompany = requestData.ExpressCompany
+		order.ExpressNumber = requestData.ExpressNumber
 	}
 
-	// 准备响应数据
-	detailMap := convertOrderToMap(order)
-	if logistics.ID > 0 {
-		detailMap["logistics"] = map[string]interface{}{
-			"express_company": logistics.ExpressCompany,
-			"express_number":  logistics.ExpressNumber,
-			"status":          logistics.Status,
-			"details":         logistics.Details,
-			"last_updated":    logistics.LastUpdated.Format("2006-01-02 15:04:05"),
-		}
+	// 更新订单状态
+	order.Status = requestData.Status
+	if requestData.Status == "paid" {
+		order.PaymentTime = time.Now()
 	}
+
+	if err := db.DB.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "修改订单状态失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "订单状态修改成功",
+		"data": gin.H{"order_id": requestData.OrderID, "status": requestData.Status}
+	})
+}
 
 	responseData := gin.H{
 		"code":    200,
@@ -117,105 +257,77 @@ func (oc *OrderController) OrderDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, responseData)
 }
 
-// OrderCreate 创建订单
+// OrderCreate 创建订单 - 与Django版本的add_order函数对应
 func (oc *OrderController) OrderCreate(c *gin.Context) {
-	var requestData map[string]interface{}
-	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
+	// 绑定请求参数
+	var orderData struct {
+		ReceiverName    string        `json:"receiver_name" binding:"required"`
+		Province        string        `json:"province" binding:"required"`
+		City            string        `json:"city" binding:"required"`
+		County          string        `json:"county" binding:"required"`
+		DetailedAddress string        `json:"detailed_address" binding:"required"`
+		OrderAmount     float64       `json:"order_amount" binding:"required"`
+		ProductList     []interface{} `json:"product_list" binding:"required,dive"`
+		UserID          int           `json:"user_id" binding:"required"`
+		ReceiverPhone   string        `json:"receiver_phone"`
+		ExpressCompany  string        `json:"express_company"`
+		ExpressNumber   string        `json:"express_number"`
+	}
+
+	if err := c.ShouldBindJSON(&orderData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误"})
 		return
 	}
 
-	// 获取必要参数
-	userIDFloat, ok := requestData["user_id"].(float64)
-	commodityIDFloat, ok2 := requestData["commodity_id"].(float64)
-	quantityFloat, ok3 := requestData["quantity"].(float64)
-	receiverName, ok4 := requestData["receiver_name"].(string)
-	receiverPhone, ok5 := requestData["receiver_phone"].(string)
-	address, ok6 := requestData["address"].(string)
-
-	if !ok || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要的订单信息"})
+	// 验证product_list是否为列表
+	if len(orderData.ProductList) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "product_list不能为空列表"})
 		return
 	}
-
-	userID := int(userIDFloat)
-	commodityID := int(commodityIDFloat)
-	quantity := int(quantityFloat)
-
-	// 查询商品信息
-	var commodity models.Commodity
-	if err := db.DB.Where("commodity_id = ?", commodityID).First(&commodity).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商品不存在"})
-		return
-	}
-
-	// 查询商品库存
-	var commoditySituation models.CommoditySituation
-	if err := db.DB.Where("commodity_id = ?", commodityID).First(&commoditySituation).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商品库存失败"})
-		return
-	}
-
-	// 检查商品状态
-	if commoditySituation.Status != "online" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商品已下架"})
-		return
-	}
-
-	// 计算订单总价
-	totalPrice := commodity.Price * float64(quantity)
 
 	// 生成订单号
-	orderNo := generateOrderNo()
+	orderID := generateOrderNo()
 
 	// 创建订单
 	order := models.Order{
-		OrderID:         orderNo,
-		UserID:          userID,
-		CommodityID:     strconv.Itoa(commodityID),
-		CommodityName:   commodity.Name,
-		Quantity:        quantity,
-		Price:           commodity.Price,
-		TotalAmount:     totalPrice,
-		Status:          "待付款",
-		ReceiverName:    receiverName,
-		ReceiverPhone:   receiverPhone,
-		Province:        "",
-		City:            "",
-		County:          "",
-		DetailedAddress: address,
+		OrderID:        orderID,
+		UserID:         orderData.UserID,
+		ReceiverName:   orderData.ReceiverName,
+		ReceiverPhone:  orderData.ReceiverPhone,
+		Province:       orderData.Province,
+		City:           orderData.City,
+		County:         orderData.County,
+		DetailedAddress: orderData.DetailedAddress,
+		OrderAmount:    orderData.OrderAmount,
+		ProductList:    orderData.ProductList,
+		ExpressCompany: orderData.ExpressCompany,
+		ExpressNumber:  orderData.ExpressNumber,
+		Status:         "pending",
+		OrderTime:      time.Now(),
 	}
 
-	// 开始事务
-	tx := db.DB.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 创建订单记录
-	if err := tx.Create(&order).Error; err != nil {
-		tx.Rollback()
+	// 保存订单
+	if err := db.DB.Create(&order).Error; err != nil {
 		log.Printf("创建订单失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "服务器内部错误"})
 		return
 	}
 
-	// 检查商品状态
-	if commoditySituation.Status != "online" {
-		tx.Rollback()
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商品已下架"})
-		return
+	// 准备响应数据
+	responseData := map[string]interface{}{
+		"order_id": orderID,
+		"user_id":  orderData.UserID,
+		"receiver_name": orderData.ReceiverName,
+		"receiver_phone": orderData.ReceiverPhone,
+		"express_company": orderData.ExpressCompany,
+		"express_number": orderData.ExpressNumber,
 	}
 
-	// 提交事务
-	tx.Commit()
-
-	c.JSON(http.StatusCreated, gin.H{
-		"code":    201,
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
 		"message": "订单创建成功",
-		"data":    convertOrderToMap(order),
+		"order_id": orderID,
+		"data":     responseData,
 	})
 }
 
@@ -285,243 +397,223 @@ func (oc *OrderController) OrderUpdate(c *gin.Context) {
 	})
 }
 
-// OrderCancel 取消订单
+// OrderCancel 取消订单 - 与Django版本的功能保持一致
 func (oc *OrderController) OrderCancel(c *gin.Context) {
-	orderIDStr := c.Param("id")
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的订单ID"})
+	// 获取订单ID
+	orderID := c.Query("order_id")
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "订单ID不能为空",
+		})
 		return
 	}
 
 	// 查询订单
 	var order models.Order
 	if err := db.DB.Where("order_id = ?", orderID).First(&order).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
-		return
-	}
-
-	// 检查订单状态是否允许取消
-	if order.Status != "待付款" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许取消"})
-		return
-	}
-
-	// 更新订单状态
-	order.Status = "已取消"
-
-	// 开始事务
-	tx := db.DB.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 保存更新
-	if err := tx.Save(&order).Error; err != nil {
-		tx.Rollback()
-		log.Printf("取消订单失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
-		return
-	}
-
-	// 检查商品状态
-	var commoditySituation models.CommoditySituation
-	if err := tx.Where("commodity_id = ?", order.CommodityID).First(&commoditySituation).Error; err != nil {
-		tx.Rollback()
-		log.Printf("获取商品信息失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
-		return
-	}
-
-	// 提交事务
-	tx.Commit()
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
-		"message": "订单已取消",
-		"data":    convertOrderToMap(order),
-	})
-}
-
-// OrderPay 订单支付
-func (oc *OrderController) OrderPay(c *gin.Context) {
-	orderIDStr := c.Param("id")
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的订单ID"})
-		return
-	}
-
-	// 查询订单
-	var order models.Order
-	if err := db.DB.Where("order_id = ?", orderID).First(&order).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "订单不存在",
+		})
 		return
 	}
 
 	// 检查订单状态
-	if order.Status != "待付款" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许支付"})
+	if order.Status != "pending" && order.Status != "paid" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "只有待支付和已支付状态的订单才能取消",
+		})
 		return
 	}
 
-	// 更新订单状态和支付信息
-	order.Status = "已付款"
-	order.PaymentMethod = "微信支付"
+	// 更新订单状态
+	order.Status = "cancelled"
+	if err := db.DB.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "取消订单失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "订单取消成功",
+		"data": gin.H{"order_id": orderID}
+	})
+}
+
+// OrderPay 支付订单 - 与Django版本的功能保持一致
+func (oc *OrderController) OrderPay(c *gin.Context) {
+	// 获取订单ID
+	orderID := c.Query("order_id")
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "订单ID不能为空",
+		})
+		return
+	}
+
+	// 查询订单
+	var order models.Order
+	if err := db.DB.Where("order_id = ?", orderID).First(&order).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "订单不存在",
+		})
+		return
+	}
+
+	// 检查订单状态是否允许支付
+	if order.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "订单状态不允许支付",
+		})
+		return
+	}
+
+	// 更新订单状态
+	order.Status = "paid"
 	order.PaymentTime = time.Now()
 
+	// 保存更新
 	if err := db.DB.Save(&order).Error; err != nil {
-		log.Printf("订单支付失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "支付订单失败",
+		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
+		"status":  "success",
 		"message": "订单支付成功",
-		"data":    convertOrderToMap(order),
+		"data": gin.H{"order_id": orderID}
 	})
 }
 
-// OrderDeliver 订单发货
+// OrderDeliver 发货 - 与Django版本update_express_info函数对应
 func (oc *OrderController) OrderDeliver(c *gin.Context) {
-	orderIDStr := c.Param("id")
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的订单ID"})
-		return
-	}
-
 	// 绑定请求数据
-	var deliverData map[string]interface{}
-	if err := c.ShouldBindJSON(&deliverData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
-		return
+	var deliverData struct {
+		OrderID        string `json:"order_id" binding:"required"`
+		ExpressCompany string `json:"express_company" binding:"required"`
+		ExpressNumber  string `json:"express_number" binding:"required"`
 	}
 
-	logisticsCompany, ok1 := deliverData["logistics_company"].(string)
-	trackingNumber, ok2 := deliverData["tracking_number"].(string)
-
-	if !ok1 || !ok2 || logisticsCompany == "" || trackingNumber == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要的物流信息"})
+	if err := c.ShouldBindJSON(&deliverData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "请求数据无效"
+		})
 		return
 	}
 
 	// 查询订单
 	var order models.Order
-	if err := db.DB.Where("order_id = ?", orderID).First(&order).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
+	if err := db.DB.Where("order_id = ?", deliverData.OrderID).First(&order).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "订单不存在"
+		})
 		return
 	}
 
-	// 检查订单状态
-	if order.Status != "已付款" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许发货"})
+	// 检查订单状态是否允许发货
+	if order.Status != "paid" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "订单状态不允许发货"
+		})
 		return
 	}
 
-	// 更新订单状态
-	order.Status = "已发货"
-
-	// 创建物流信息
-	logistics := models.OrderLogistics{
-		OrderID:        strconv.Itoa(orderID),
-		ExpressCompany: logisticsCompany,
-		ExpressNumber:  trackingNumber,
-		Status:         "已发货",
-		Details:        "订单已发货",
-	}
-
-	// 开始事务
-	tx := db.DB.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 保存订单更新
-	if err := tx.Save(&order).Error; err != nil {
-		tx.Rollback()
-		log.Printf("更新订单状态失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+	// 更新订单状态和物流信息
+	order.Status = "shipped"
+	order.ExpressCompany = deliverData.ExpressCompany
+	order.ExpressNumber = deliverData.ExpressNumber
+	if err := db.DB.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "更新订单物流信息失败"
+		})
 		return
-	}
-
-	// 创建物流记录
-	if err := tx.Create(&logistics).Error; err != nil {
-		tx.Rollback()
-		log.Printf("创建物流记录失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
-		return
-	}
-
-	// 提交事务
-	tx.Commit()
-
-	// 更新商品销量
-	var commoditySituation models.CommoditySituation
-	if err := db.DB.Where("commodity_id = ?", order.CommodityID).First(&commoditySituation).Error; err == nil {
-		commoditySituation.SalesVolume += order.Quantity
-		db.DB.Save(&commoditySituation)
-	}
-
-	// 准备响应数据
-	detailMap := convertOrderToMap(order)
-	now := time.Now()
-	detailMap["logistics"] = map[string]interface{}{
-		"express_company": logisticsCompany,
-		"express_number":  trackingNumber,
-		"status":          "已发货",
-		"create_time":     now.Format("2006-01-02 15:04:05"),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
+		"status":  "success",
 		"message": "订单发货成功",
-		"data":    detailMap,
+		"data": gin.H{"order_id": deliverData.OrderID}
 	})
 }
 
-// 工具函数：生成订单号
+// 工具函数：生成订单号 - 格式为Y+YYYYMMDD+8位随机数字
 func generateOrderNo() string {
-	year := time.Now().Year()
-	month := time.Now().Month()
-	day := time.Now().Day()
-	hour := time.Now().Hour()
-	minute := time.Now().Minute()
-	second := time.Now().Second()
-	nano := time.Now().UnixNano() % 1000000
-
-	return fmt.Sprintf("%d%02d%02d%02d%02d%02d%06d", year, month, day, hour, minute, second, nano)
+	currentDate := time.Now().Format("20060102")
+	maxRetries := 5
+	var orderID string
+	
+	for retry := 0; retry < maxRetries; retry++ {
+		// 生成8位随机数字
+		var randomNum string
+		for i := 0; i < 8; i++ {
+			randomNum += fmt.Sprintf("%d", time.Now().UnixNano()%10)
+			// 添加小延迟以确保随机性
+			time.Sleep(time.Nanosecond)
+		}
+		
+		orderID = fmt.Sprintf("Y%s%s", currentDate, randomNum)
+			
+		// 检查订单号是否已存在
+		var count int64
+		err := db.DB.Model(&models.Order{}).Where("order_id = ?", orderID).Count(&count).Error
+		if err == nil && count == 0 {
+			return orderID
+		}
+	}
+	
+	// 如果重试多次仍失败，使用时间戳作为后备方案
+	return fmt.Sprintf("Y%s%d", currentDate, time.Now().UnixNano()%100000000)
 }
 
-// 工具函数：将订单对象转换为map
+// 工具函数：将订单对象转换为map - 与Django版本返回格式一致
 func convertOrderToMap(order models.Order) map[string]interface{} {
 	result := make(map[string]interface{})
 	result["order_id"] = order.OrderID
 	result["user_id"] = order.UserID
-	result["commodity_id"] = order.CommodityID
-	result["commodity_name"] = order.CommodityName
-	result["quantity"] = order.Quantity
-	result["price"] = order.Price
-	result["total_amount"] = order.TotalAmount
-	result["status"] = order.Status
-	result["payment_method"] = order.PaymentMethod
 	result["receiver_name"] = order.ReceiverName
 	result["receiver_phone"] = order.ReceiverPhone
 	result["province"] = order.Province
 	result["city"] = order.City
 	result["county"] = order.County
 	result["detailed_address"] = order.DetailedAddress
-	result["order_time"] = order.OrderTime.Format("2006-01-02 15:04:05")
-
-	// 检查支付时间是否为零值
-	if !order.PaymentTime.IsZero() {
-		result["payment_time"] = order.PaymentTime.Format("2006-01-02 15:04:05")
+	result["order_amount"] = order.OrderAmount
+	result["product_list"] = order.ProductList
+	result["status"] = order.Status
+	
+	// 转换下单时间为UTC+8并格式化（与Django版本保持一致）
+	orderTimeCN := order.OrderTime.Add(8 * time.Hour)
+	result["order_time"] = orderTimeCN.Format("2006-01-02 15:04:05")
+	
+	// 添加物流相关字段
+	if order.ExpressCompany != "" {
+		result["express_company"] = order.ExpressCompany
+	} else {
+		result["express_company"] = ""
 	}
+	
+	if order.ExpressNumber != "" {
+		result["express_number"] = order.ExpressNumber
+	} else {
+		result["express_number"] = ""
+	}
+	
+	// 初始化空物流过程列表
+	result["logistics_process"] = []interface{}{}
 
 	return result
 }
@@ -533,4 +625,67 @@ func convertOrdersToMap(orders []models.Order) []map[string]interface{} {
 		result = append(result, convertOrderToMap(order))
 	}
 	return result
+}
+
+// ChangeReceivingData 修改收货信息 - 与Django版本的change_receiving_data函数对应
+func (oc *OrderController) ChangeReceivingData(c *gin.Context) {
+	// 绑定请求数据
+	var requestData struct {
+		OrderID        string `json:"order_id" binding:"required"`
+		ReceiverName   string `json:"receiver_name" binding:"required"`
+		ReceiverPhone  string `json:"receiver_phone" binding:"required"`
+		Province       string `json:"province" binding:"required"`
+		City           string `json:"city" binding:"required"`
+		County         string `json:"county" binding:"required"`
+		DetailedAddress string `json:"detailed_address" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "请求数据无效",
+		})
+		return
+	}
+
+	// 查询订单
+	var order models.Order
+	if err := db.DB.Where("order_id = ?", requestData.OrderID).First(&order).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "订单不存在",
+		})
+		return
+	}
+
+	// 检查订单状态是否允许修改收货信息
+	if order.Status == "shipped" || order.Status == "delivered" || order.Status == "cancelled" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "订单状态不允许修改收货信息",
+		})
+		return
+	}
+
+	// 更新收货信息
+	order.ReceiverName = requestData.ReceiverName
+	order.ReceiverPhone = requestData.ReceiverPhone
+	order.Province = requestData.Province
+	order.City = requestData.City
+	order.County = requestData.County
+	order.DetailedAddress = requestData.DetailedAddress
+
+	if err := db.DB.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "修改收货信息失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "收货信息修改成功",
+		"data": gin.H{"order_id": requestData.OrderID}
+	})
 }

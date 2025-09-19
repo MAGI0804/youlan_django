@@ -57,6 +57,36 @@ func ParseToken(tokenString string, cfg config.Config) (*jwt.Token, error) {
 	return token, err
 }
 
+// RefreshAccessToken 只刷新访问令牌 - 用于TokenRefreshView
+func RefreshAccessToken(refreshTokenString string, cfg config.Config) (string, error) {
+	token, err := ParseToken(refreshTokenString, cfg)
+	if err != nil {
+		return "", err
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return "", fmt.Errorf("invalid refresh token")
+	}
+
+	// 获取用户ID
+	userIDStr, ok := claims["sub"].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid user ID in token")
+	}
+
+	var userID int
+	fmt.Sscanf(userIDStr, "%d", &userID)
+
+	// 只生成新的访问令牌
+	accessToken, _, err := GenerateTokens(userID, cfg)
+	if err != nil {
+		return "", err
+	}
+
+	return accessToken, nil
+}
+
 // RefreshToken 刷新访问令牌
 func RefreshToken(refreshTokenString string, cfg config.Config) (string, string, error) {
 	token, err := ParseToken(refreshTokenString, cfg)

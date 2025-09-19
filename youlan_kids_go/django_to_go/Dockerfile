@@ -45,6 +45,8 @@ FROM alpine:3.18
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/youlan_kids_go .
+# 添加执行权限
+RUN chmod +x ./youlan_kids_go
 EXPOSE 8080
 ENV TZ=Asia/Shanghai
 CMD ["./youlan_kids_go"]

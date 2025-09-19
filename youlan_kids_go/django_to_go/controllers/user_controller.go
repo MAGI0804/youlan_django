@@ -480,3 +480,220 @@ func (uc *UserController) WechatLogin(c *gin.Context) {
 
 	c.JSON(http.StatusOK, responseData)
 }
+
+// AddData 添加用户数据
+func (uc *UserController) AddData(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
+		return
+	}
+
+	// 检查必要参数
+	userIdFloat, ok := requestData["user_id"].(float64)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少user_id参数"})
+		return
+	}
+
+	dataType, ok := requestData["data_type"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少data_type参数"})
+		return
+	}
+
+	dataValue, ok := requestData["data_value"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少data_value参数"})
+		return
+	}
+
+	userID := int(userIdFloat)
+
+	// 检查用户是否存在
+	var user models.User
+	if err := db.DB.Where("user_id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	// 创建用户数据
+	userData := models.UserData{
+		UserID:    userID,
+		DataType:  dataType,
+		DataValue: dataValue,
+		CreateTime: time.Now(),
+	}
+
+	if err := db.DB.Create(&userData).Error; err != nil {
+		log.Printf("添加用户数据失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "用户数据添加成功",
+		"data_id": userData.ID,
+	})
+}
+
+// FindData 查询用户数据
+func (uc *UserController) FindData(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
+		return
+	}
+
+	// 检查必要参数
+	userIdFloat, ok := requestData["user_id"].(float64)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少user_id参数"})
+		return
+	}
+
+	userID := int(userIdFloat)
+
+	// 检查用户是否存在
+	var user models.User
+	if err := db.DB.Where("user_id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	// 查询条件
+	query := db.DB.Where("user_id = ?", userID)
+
+	// 如果指定了数据类型
+	if dataType, ok := requestData["data_type"].(string); ok && dataType != "" {
+		query = query.Where("data_type = ?", dataType)
+	}
+
+	// 分页参数
+	page := 1
+	pageSize := 10
+
+	if pageFloat, ok := requestData["page"].(float64); ok {
+		page = int(pageFloat)
+	}
+
+	if pageSizeFloat, ok := requestData["page_size"].(float64); ok {
+		pageSize = int(pageSizeFloat)
+	}
+
+	// 查询数据
+	var userDatas []models.UserData
+	var total int64
+
+	query.Model(&models.UserData{}).Count(&total)
+	query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&userDatas)
+
+	// 构建响应数据
+	result := make([]map[string]interface{}, 0, len(userDatas))
+	for _, data := range userDatas {
+		item := map[string]interface{}{
+			"id":         data.ID,
+			"data_type":  data.DataType,
+			"data_value": data.DataValue,
+			"create_time": data.CreateTime.Format("2006-01-02 15:04:05"),
+		}
+		result = append(result, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"list":      result,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
+	})
+}
+
+// TokenObtainPair 获取JWT令牌 - 对应Django的TokenObtainPairView
+func (uc *UserController) TokenObtainPair(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
+		return
+	}
+
+	mobile, ok := requestData["mobile"].(string)
+	password, ok2 := requestData["password"].(string)
+
+	if !ok || !ok2 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":    "缺少必要参数",
+			"required": []string{"mobile", "password"},
+		})
+		return
+	}
+
+	// 验证手机号格式
+	phoneRegex := regexp.MustCompile(`^1[3-9]\d{9}$`)
+	if !phoneRegex.MatchString(mobile) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式错误"})
+		return
+	}
+
+	// 查询用户
+	var user models.User
+	if err := db.DB.Where("mobile = ?", mobile).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "手机号未注册"})
+		return
+	}
+
+	// 验证密码
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号存在但密码错误"})
+		return
+	}
+
+	// 获取配置
+	cfg := config.LoadConfig()
+
+	// 生成令牌
+	accessToken, refreshToken, err := utils.GenerateTokens(user.UserID, cfg)
+	if err != nil {
+		log.Printf("生成令牌失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		return
+	}
+
+	// 返回与Django相同格式的响应
+	c.JSON(http.StatusOK, gin.H{
+		"access":  accessToken,
+		"refresh": refreshToken,
+	})
+}
+
+// TokenRefresh 刷新JWT令牌 - 对应Django的TokenRefreshView
+func (uc *UserController) TokenRefresh(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的JSON格式"})
+		return
+	}
+
+	refreshToken, ok := requestData["refresh"].(string)
+	if !ok || refreshToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少refresh参数"})
+		return
+	}
+
+	// 获取配置
+	cfg := config.LoadConfig()
+
+	// 解析并验证刷新令牌
+	newAccessToken, err := utils.RefreshAccessToken(refreshToken, cfg)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的刷新令牌"})
+		return
+	}
+
+	// 返回与Django相同格式的响应
+	c.JSON(http.StatusOK, gin.H{
+		"access": newAccessToken,
+	})

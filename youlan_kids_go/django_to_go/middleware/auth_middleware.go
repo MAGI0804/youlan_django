@@ -13,23 +13,29 @@ import (
 // JWTAuthMiddleware JWT认证中间件
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 获取Authorization头
+		var tokenString string
+		
+		// 尝试从Authorization头获取token
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+		if authHeader != "" {
+			// 检查token格式
+			authParts := strings.SplitN(authHeader, " ", 2)
+			if len(authParts) == 2 && authParts[0] == "Bearer" {
+				tokenString = authParts[1]
+			}
+		}
+		
+		// 如果Authorization头中没有有效的token，尝试从URL参数access_token获取
+		if tokenString == "" {
+			tokenString = c.Query("access_token")
+		}
+		
+		// 如果两种方式都没有获取到token，返回未授权
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization token is required, either in header or as access_token query parameter"})
 			c.Abort()
 			return
 		}
-
-		// 检查token格式
-		authParts := strings.SplitN(authHeader, " ", 2)
-		if !(len(authParts) == 2 && authParts[0] == "Bearer") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer {token}"})
-			c.Abort()
-			return
-		}
-
-		tokenString := authParts[1]
 		// 解析token
 		cfg := config.LoadConfig()
 		token, err := utils.ParseToken(tokenString, cfg)
