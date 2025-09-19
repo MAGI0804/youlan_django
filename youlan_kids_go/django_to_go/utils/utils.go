@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/config"
+	"django_to_go/config"
 	"github.com/golang-jwt/jwt/v4"
 )
 

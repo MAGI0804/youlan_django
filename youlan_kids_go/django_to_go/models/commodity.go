@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -26,7 +27,12 @@ type Commodity struct {
 
 // TableName 设置表名
 func (Commodity) TableName() string {
-	return "Commodity_data"
+	return "commodity_commodity"
+}
+
+// BeforeSave GORM钩子，确保gorm包被使用
+func (c *Commodity) BeforeSave(*gorm.DB) error {
+	return nil
 }
 
 // CommodityImage 商品图片模型

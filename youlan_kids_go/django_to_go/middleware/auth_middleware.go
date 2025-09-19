@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"context"
+	"django_to_go/config"
+	"django_to_go/utils"
 	"net/http"
 	"strings"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/config"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/utils"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -33,31 +33,31 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// 解析token
 		cfg := config.LoadConfig()
 		token, err := utils.ParseToken(tokenString, cfg)
-	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
-		c.Abort()
-		return
-	}
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
 
-	// 提取用户信息
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-		c.Abort()
-		return
-	}
+		// 提取用户信息
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+			c.Abort()
+			return
+		}
 
-	// 获取用户ID
-	userIDStr, ok := claims["sub"].(string)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
-		c.Abort()
-		return
-	}
+		// 获取用户ID
+		userIDStr, ok := claims["sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+			c.Abort()
+			return
+		}
 
-	// 将用户ID存储到上下文中
-	c.Set("userID", userIDStr)
-	c.Next()
+		// 将用户ID存储到上下文中
+		c.Set("userID", userIDStr)
+		c.Next()
 	}
 }
 
@@ -94,7 +94,7 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 
 		// 处理错误
 		if len(c.Errors) > 0 {
-			for _, err := range c.Errors {
+			for _, _ = range c.Errors {
 				// 这里可以根据需要添加错误处理逻辑
 				// 例如记录错误日志、返回统一的错误格式等
 			}

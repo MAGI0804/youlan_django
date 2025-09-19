@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  web:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_ENGINE=mysql
+      - DB_HOST=rm-uf623nc5tc2icc2u9uo.mysql.rds.aliyuncs.com
+      - DB_PORT=3306
+      - DB_NAME=wechat_member
+      - DB_USER=youlansy
+      - DB_PASSWORD=Allblu2022#
+      - SECRET_KEY='django-insecure-m89*e)$=h*0a#6!$=e+r@w5%985!j!f8y2mt%@#qw%o=i#!f*6'
+      - JWT_ACCESS_TOKEN_LIFETIME=60
+      - JWT_REFRESH_TOKEN_LIFETIME=1440
+    networks:
+      - web_network
+
+networks:
+  web_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

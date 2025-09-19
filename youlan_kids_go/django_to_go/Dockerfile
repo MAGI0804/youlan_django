@@ -1,41 +1,50 @@
-# 使用官方Go镜像作为构建环境
-FROM golang:1.21-alpine AS builder
+# 构建阶段
+FROM golang:1.24-alpine AS builder
 
-# 设置工作目录
+# 1. 重置环境变量（启用模块模式）
+ENV GO111MODULE=on \
+    GOPATH="" \
+    GOMODCACHE="/go/pkg/mod"
+
+# 2. 设置工作目录（与你的 django_to_go 根目录对应）
 WORKDIR /app
 
-# 复制go.mod和go.sum文件
-COPY go.mod go.sum ./
+# 3. 安装工具 + 修复权限
+RUN apk add --no-cache git && \
+    git config --global http.sslVerify false && \
+    chmod -R 755 /app
 
-# 下载依赖
-RUN go mod download
-
-# 复制源代码
+# 4. 复制所有文件（你的目录结构：config、db、main.go 等都在根目录）
 COPY . .
 
-# 构建应用
-RUN CGO_ENABLED=0 GOOS=linux go build -o youlan_kids_go
+# 5. 验证目录和模块（修正注释位置，避免命令断裂）
+RUN echo "=== 验证根目录文件 ===" && \
+    ls -la /app && \
+    echo "=== 验证 go.mod 内容 ===" && \
+    cat /app/go.mod && \
+    echo "=== 验证子包目录 ===" && \
+    ls -la /app/config && \
+    ls -la /app/db && \
+    echo "=== 验证模块信息 ===" && \
+    go list -m django_to_go && \
+    echo "=== 验证 config 子包 ===" && \
+    go list django_to_go/config || echo "子包未识别（检查目录和 package 声明）"
 
-# 使用Alpine作为运行环境，减小镜像大小
+# 6. 国内代理
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+
+# 7. 整理依赖
+RUN go mod tidy
+
+# 8. 编译应用
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -o youlan_kids_go main.go
+
+# 运行阶段
 FROM alpine:3.18
-
-# 添加tzdata包以支持时区设置
 RUN apk --no-cache add ca-certificates tzdata
-
-# 设置工作目录
 WORKDIR /app
-
-# 从构建阶段复制可执行文件
 COPY --from=builder /app/youlan_kids_go .
-
-# 复制配置文件（如果有）
-COPY config/ config/
-
-# 暴露应用端口
 EXPOSE 8080
-
-# 设置时区为上海
 ENV TZ=Asia/Shanghai
-
-# 启动命令
 CMD ["./youlan_kids_go"]

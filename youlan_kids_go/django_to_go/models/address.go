@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -23,4 +24,9 @@ type Address struct {
 // TableName 设置表名
 func (Address) TableName() string {
 	return "address_address"
+}
+
+// BeforeSave GORM钩子，确保gorm包被使用
+func (a *Address) BeforeSave(*gorm.DB) error {
+	return nil
 }

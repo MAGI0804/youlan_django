@@ -1,18 +1,19 @@
 package main
 
 import (
+	"django_to_go/config"
+	"django_to_go/db"
+	"django_to_go/middleware"
+	"django_to_go/routes"
 	"log"
+
 	"github.com/gin-gonic/gin"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/config"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/db"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/middleware"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/routes"
 )
 
 func main() {
 	// 加载配置
 	appConfig := config.LoadConfig()
-	
+
 	// 初始化数据库
 	db.InitDB(appConfig)
 

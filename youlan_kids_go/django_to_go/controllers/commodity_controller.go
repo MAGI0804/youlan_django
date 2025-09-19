@@ -5,10 +5,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 	"github.com/gin-gonic/gin"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/db"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/models"
+	"django_to_go/db"
+	"django_to_go/models"
 )
 
 // CommodityController 商品控制器
@@ -91,14 +90,13 @@ func (cc *CommodityController) CommodityDetail(c *gin.Context) {
 
 	// 查询商品状态
 	var commoditySituation models.CommoditySituation
-	if err := db.DB.Where("commodity_id = ?", commodityID).First(&commoditySituation).Error; err != nil {
+	if err := db.DB.Where("commodity_id = ?", strconv.Itoa(commodityID)).First(&commoditySituation).Error; err != nil {
 		// 如果没有状态记录，创建一个默认的
 		commoditySituation = models.CommoditySituation{
-			CommodityID: commodityID,
-			IsOnline:    true,
+			CommodityID: strconv.Itoa(commodityID),
+			Status:      "online",
 			SalesVolume: 0,
-			Stock:       100,
-			LastUpdate:  time.Now(),
+			StyleCode:   commodity.StyleCode,
 		}
 		if err := db.DB.Create(&commoditySituation).Error; err != nil {
 			log.Printf("创建商品状态记录失败: %v", err)
@@ -108,9 +106,8 @@ func (cc *CommodityController) CommodityDetail(c *gin.Context) {
 	// 准备响应数据
 	detailMap := convertCommodityToMap(commodity, c)
 	detailMap["images"] = convertImagesToMap(commodityImages, c)
-	detailMap["is_online"] = commoditySituation.IsOnline
+	detailMap["status"] = commoditySituation.Status
 	detailMap["sales_volume"] = commoditySituation.SalesVolume
-	detailMap["stock"] = commoditySituation.Stock
 
 	responseData := gin.H{
 		"code":    200,
@@ -153,7 +150,6 @@ func (cc *CommodityController) CommodityCreate(c *gin.Context) {
 	}
 
 	// 创建商品状态
-	now := time.Now()
 	commoditySituation := models.CommoditySituation{
 		CommodityID: commodity.CommodityID,
 		Status:      "online", // 设置为在线状态
@@ -177,17 +173,16 @@ func (cc *CommodityController) CommodityCreate(c *gin.Context) {
 		}
 
 		// 查找或创建款式状态
-		var styleCodeSituation models.StyleCodeSituation
-		if err := db.DB.Where("style_code = ?", requestData.StyleCode).First(&styleCodeSituation).Error; err != nil {
-			styleCodeSituation = models.StyleCodeSituation{
-				StyleCode:  requestData.StyleCode,
-				IsOnline:   true,
-				LastUpdate: now,
-			}
-			if err := db.DB.Create(&styleCodeSituation).Error; err != nil {
-				log.Printf("创建款式状态失败: %v", err)
-			}
+	var styleCodeSituation models.StyleCodeSituation
+	if err := db.DB.Where("style_code = ?", requestData.StyleCode).First(&styleCodeSituation).Error; err != nil {
+		styleCodeSituation = models.StyleCodeSituation{
+			StyleCode: requestData.StyleCode,
+			Status:    "online",
 		}
+		if err := db.DB.Create(&styleCodeSituation).Error; err != nil {
+			log.Printf("创建款式状态失败: %v", err)
+		}
+	}
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -233,29 +228,24 @@ func (cc *CommodityController) CommodityUpdate(c *gin.Context) {
 	if updateData.Price > 0 {
 		commodity.Price = updateData.Price
 	}
-	if updateData.Description != "" {
-		commodity.Description = updateData.Description
-	}
-	if updateData.Material != "" {
-		commodity.Material = updateData.Material
-	}
 	if updateData.Size != "" {
 		commodity.Size = updateData.Size
 	}
 	if updateData.Color != "" {
 		commodity.Color = updateData.Color
 	}
-	if updateData.Brand != "" {
-		commodity.Brand = updateData.Brand
+	if updateData.CategoryDetail != "" {
+		commodity.CategoryDetail = updateData.CategoryDetail
 	}
-	if updateData.HeightRange != "" {
-		commodity.HeightRange = updateData.HeightRange
+	if updateData.Height != "" {
+		commodity.Height = updateData.Height
 	}
-	if updateData.SpecificationCode != "" {
-		commodity.SpecificationCode = updateData.SpecificationCode
+	if updateData.SpecCode != "" {
+		commodity.SpecCode = updateData.SpecCode
 	}
-
-	commodity.UpdateTime = time.Now()
+	if updateData.Notes != "" {
+		commodity.Notes = updateData.Notes
+	}
 
 	// 保存更新
 	if err := db.DB.Save(&commodity).Error; err != nil {
@@ -281,7 +271,7 @@ func (cc *CommodityController) CommodityDelete(c *gin.Context) {
 
 	// 查询商品
 	var commodity models.Commodity
-	if err := db.DB.Where("commodity_id = ?", commodityID).First(&commodity).Error; err != nil {
+	if err := db.DB.Where("commodity_id = ?", strconv.Itoa(commodityID)).First(&commodity).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商品不存在"})
 		return
 	}
@@ -306,21 +296,19 @@ func convertCommodityToMap(commodity models.Commodity, c *gin.Context) map[strin
 	result["name"] = commodity.Name
 	result["style_code"] = commodity.StyleCode
 	result["category"] = commodity.Category
+	result["category_detail"] = commodity.CategoryDetail
 	result["price"] = commodity.Price
-	result["description"] = commodity.Description
-	result["material"] = commodity.Material
 	result["size"] = commodity.Size
 	result["color"] = commodity.Color
-	result["brand"] = commodity.Brand
-	result["height_range"] = commodity.HeightRange
-	result["specification_code"] = commodity.SpecificationCode
-	result["create_time"] = commodity.CreateTime.Format("2006-01-02 15:04:05")
-	result["update_time"] = commodity.UpdateTime.Format("2006-01-02 15:04:05")
+	result["height"] = commodity.Height
+	result["spec_code"] = commodity.SpecCode
+	result["notes"] = commodity.Notes
+	result["created_at"] = commodity.CreatedAt.Format("2006-01-02 15:04:05")
 
 	// 处理图片URL
 	if commodity.Image != "" {
 		baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.Host)
-		result["image"] = baseURL + commodity.Image
+		result["image"] = baseURL + "/" + commodity.Image
 	}
 
 	return result
@@ -342,8 +330,9 @@ func convertImagesToMap(images []models.CommodityImage, c *gin.Context) []map[st
 
 	for _, image := range images {
 		imgMap := make(map[string]interface{})
-		imgMap["id"] = image.ImageID
-		imgMap["url"] = baseURL + image.ImagePath
+		imgMap["id"] = image.ID
+		imgMap["url"] = baseURL + "/" + image.Image
+		imgMap["is_main"] = image.IsMain
 		result = append(result, imgMap)
 	}
 

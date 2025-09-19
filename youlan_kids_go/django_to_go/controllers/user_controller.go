@@ -1,3 +1,4 @@
+// 显示文件头部内容
 package controllers
 
 import (
@@ -11,10 +12,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/config"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/db"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/models"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/utils"
+	"django_to_go/config"
+	"django_to_go/db"
+	"django_to_go/models"
+	"django_to_go/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -193,7 +194,7 @@ func (uc *UserController) UserModify(c *gin.Context) {
 		}
 
 		// 处理头像上传
-		file, header, err := c.Request.FormFile("user_img")
+		_, header, err := c.Request.FormFile("user_img")
 		if err == nil && header != nil {
 			// 保存文件
 			// 这里省略了文件保存的代码，实际项目中需要实现

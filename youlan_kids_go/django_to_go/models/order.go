@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -34,6 +35,11 @@ type Order struct {
 // TableName 设置表名
 func (Order) TableName() string {
 	return "order_order"
+}
+
+// BeforeSave GORM钩子，确保gorm包被使用
+func (o *Order) BeforeSave(*gorm.DB) error {
+	return nil
 }
 
 // OrderLogistics 订单物流信息模型

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/config"
+	"django_to_go/config"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

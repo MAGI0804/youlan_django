@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -19,4 +20,9 @@ type CartItem struct {
 // TableName 设置表名
 func (CartItem) TableName() string {
 	return "cart_cartitem"
+}
+
+// BeforeSave GORM钩子，确保gorm包被使用
+func (c *CartItem) BeforeSave(*gorm.DB) error {
+	return nil
 }

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/db"
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/models"
+	"django_to_go/db"
+	"django_to_go/models"
 )
 
 // OrderController 订单控制器
@@ -98,13 +98,13 @@ func (oc *OrderController) OrderDetail(c *gin.Context) {
 
 	// 准备响应数据
 	detailMap := convertOrderToMap(order)
-	if logistics.LogisticsID > 0 {
+	if logistics.ID > 0 {
 		detailMap["logistics"] = map[string]interface{}{
-			"logistics_company": logistics.LogisticsCompany,
-			"tracking_number":   logistics.TrackingNumber,
-			"status":            logistics.Status,
-			"create_time":       logistics.CreateTime.Format("2006-01-02 15:04:05"),
-			"update_time":       logistics.UpdateTime.Format("2006-01-02 15:04:05"),
+			"express_company": logistics.ExpressCompany,
+			"express_number":  logistics.ExpressNumber,
+			"status":          logistics.Status,
+			"details":         logistics.Details,
+			"last_updated":    logistics.LastUpdated.Format("2006-01-02 15:04:05"),
 		}
 	}
 
@@ -156,9 +156,9 @@ func (oc *OrderController) OrderCreate(c *gin.Context) {
 		return
 	}
 
-	// 检查库存
-	if commoditySituation.Stock < quantity {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商品库存不足"})
+	// 检查商品状态
+	if commoditySituation.Status != "online" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商品已下架"})
 		return
 	}
 
@@ -169,7 +169,6 @@ func (oc *OrderController) OrderCreate(c *gin.Context) {
 	orderNo := generateOrderNo()
 
 	// 创建订单
-	now := time.Now()
 	order := models.Order{
 		OrderID:         orderNo,
 		UserID:          userID,
@@ -185,7 +184,6 @@ func (oc *OrderController) OrderCreate(c *gin.Context) {
 		City:            "",
 		County:          "",
 		DetailedAddress: address,
-		OrderTime:       now,
 	}
 
 	// 开始事务
@@ -204,13 +202,10 @@ func (oc *OrderController) OrderCreate(c *gin.Context) {
 		return
 	}
 
-	// 扣减库存
-	commoditySituation.Stock -= quantity
-	commoditySituation.LastUpdate = now
-	if err := tx.Save(&commoditySituation).Error; err != nil {
+	// 检查商品状态
+	if commoditySituation.Status != "online" {
 		tx.Rollback()
-		log.Printf("更新库存失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商品已下架"})
 		return
 	}
 
@@ -307,14 +302,13 @@ func (oc *OrderController) OrderCancel(c *gin.Context) {
 	}
 
 	// 检查订单状态是否允许取消
-	if order.OrderStatus != "待付款" {
+	if order.Status != "待付款" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许取消"})
 		return
 	}
 
 	// 更新订单状态
-	order.OrderStatus = "已取消"
-	order.UpdateTime = time.Now()
+	order.Status = "已取消"
 
 	// 开始事务
 	tx := db.DB.Begin()
@@ -332,20 +326,11 @@ func (oc *OrderController) OrderCancel(c *gin.Context) {
 		return
 	}
 
-	// 恢复库存
+	// 检查商品状态
 	var commoditySituation models.CommoditySituation
 	if err := tx.Where("commodity_id = ?", order.CommodityID).First(&commoditySituation).Error; err != nil {
 		tx.Rollback()
-		log.Printf("获取商品库存失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
-		return
-	}
-
-	commoditySituation.Stock += order.Quantity
-	commoditySituation.LastUpdate = time.Now()
-	if err := tx.Save(&commoditySituation).Error; err != nil {
-		tx.Rollback()
-		log.Printf("恢复库存失败: %v", err)
+		log.Printf("获取商品信息失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
 		return
 	}
@@ -377,17 +362,15 @@ func (oc *OrderController) OrderPay(c *gin.Context) {
 	}
 
 	// 检查订单状态
-	if order.OrderStatus != "待付款" {
+	if order.Status != "待付款" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许支付"})
 		return
 	}
 
 	// 更新订单状态和支付信息
-	now := time.Now()
-	order.OrderStatus = "已付款"
+	order.Status = "已付款"
 	order.PaymentMethod = "微信支付"
-	order.PaymentTime = &now
-	order.UpdateTime = now
+	order.PaymentTime = time.Now()
 
 	if err := db.DB.Save(&order).Error; err != nil {
 		log.Printf("订单支付失败: %v", err)
@@ -434,25 +417,21 @@ func (oc *OrderController) OrderDeliver(c *gin.Context) {
 	}
 
 	// 检查订单状态
-	if order.OrderStatus != "已付款" {
+	if order.Status != "已付款" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态不允许发货"})
 		return
 	}
 
 	// 更新订单状态
-	now := time.Now()
-	order.OrderStatus = "已发货"
-	order.DeliveryTime = &now
-	order.UpdateTime = now
+	order.Status = "已发货"
 
 	// 创建物流信息
 	logistics := models.OrderLogistics{
-		OrderID:          orderID,
-		LogisticsCompany: logisticsCompany,
-		TrackingNumber:   trackingNumber,
-		Status:           "已发货",
-		CreateTime:       now,
-		UpdateTime:       now,
+		OrderID:        strconv.Itoa(orderID),
+		ExpressCompany: logisticsCompany,
+		ExpressNumber:  trackingNumber,
+		Status:         "已发货",
+		Details:        "订单已发货",
 	}
 
 	// 开始事务
@@ -486,18 +465,17 @@ func (oc *OrderController) OrderDeliver(c *gin.Context) {
 	var commoditySituation models.CommoditySituation
 	if err := db.DB.Where("commodity_id = ?", order.CommodityID).First(&commoditySituation).Error; err == nil {
 		commoditySituation.SalesVolume += order.Quantity
-		commoditySituation.LastUpdate = now
 		db.DB.Save(&commoditySituation)
 	}
 
 	// 准备响应数据
 	detailMap := convertOrderToMap(order)
+	now := time.Now()
 	detailMap["logistics"] = map[string]interface{}{
-		"logistics_company": logisticsCompany,
-		"tracking_number":   trackingNumber,
-		"status":            "已发货",
-		"create_time":       now.Format("2006-01-02 15:04:05"),
-		"update_time":       now.Format("2006-01-02 15:04:05"),
+		"express_company": logisticsCompany,
+		"express_number":  trackingNumber,
+		"status":          "已发货",
+		"create_time":     now.Format("2006-01-02 15:04:05"),
 	}
 
 	c.JSON(http.StatusOK, gin.H{

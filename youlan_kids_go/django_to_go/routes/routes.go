@@ -1,7 +1,8 @@
 package routes
 
 import (
-	"github.com/youlan-kids/youlan_kids_go/django_to_go/controllers"
+	"django_to_go/controllers"
+
 	"github.com/gin-gonic/gin"
 )
 
